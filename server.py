@@ -1,58 +1,429 @@
 import os
+import sqlite3
 
 from fastapi import FastAPI
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from fastapi.responses import FileResponse
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# =========================
+# FASTAPI APP
+# =========================
 
 app = FastAPI()
 
-telegram_app = Application.builder().token(BOT_TOKEN).build()
+
+# =========================
+# CONFIG
+# =========================
+
+DB = "subtitles.db"
+
+UPLOAD_FOLDER = "uploads"
 
 
-@app.get("/")
-async def home():
-    return {
-        "status": "online",
-        "project": "Stremio Subtitle Addon"
-    }
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✅ Bot aktif!\n\nSekarang hantar fail .srt kepada saya."
-    )
-
-
-async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.document:
-        await update.message.reply_text(
-            f"📄 File diterima:\n{update.message.document.file_name}"
-        )
-
-
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(
-    MessageHandler(filters.Document.ALL, receive_file)
+os.makedirs(
+    UPLOAD_FOLDER,
+    exist_ok=True
 )
 
 
-@app.on_event("startup")
-async def startup():
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await telegram_app.updater.start_polling()
+
+# =========================
+# DATABASE INIT
+# =========================
+
+def init_database():
+
+    conn = sqlite3.connect(DB)
+
+    cursor = conn.cursor()
 
 
-@app.on_event("shutdown")
-async def shutdown():
-    await telegram_app.updater.stop()
-    await telegram_app.stop()
-    await telegram_app.shutdown()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS subtitles (
+
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            filename TEXT,
+
+            path TEXT,
+
+            type TEXT,
+
+            imdb TEXT,
+
+            season TEXT,
+
+            episode TEXT,
+
+            created_at TEXT
+
+        )
+        """
+    )
+
+
+    conn.commit()
+
+    conn.close()
+
+
+
+init_database()
+
+
+
+# =========================
+# HOME TEST
+# =========================
+
+@app.get("/")
+def home():
+
+    return {
+        "status": "online",
+        "service": "Rizal Malay Subtitle Addon"
+    }
+
+
+
+
+# =========================
+# STREMIO MANIFEST
+# =========================
+
+@app.get("/manifest.json")
+def manifest():
+
+    return {
+
+
+        "id":
+        "rizal.malay.subtitle",
+
+
+        "version":
+        "1.0.0",
+
+
+        "name":
+        "Rizal Malay Subtitle",
+
+
+        "description":
+        "Malay subtitle addon",
+
+
+
+        "resources":[
+
+            "subtitles"
+
+        ],
+
+
+
+        "types":[
+
+            "movie",
+            "series"
+
+        ],
+
+
+
+        "idPrefixes":[
+
+            "tt"
+
+        ],
+
+
+
+        "catalogs":[]
+
+    }
+
+
+
+
+# =========================
+# STREMIO SUBTITLE API
+# =========================
+
+@app.get(
+    "/subtitles/{imdb_id}/{season}/{episode}"
+)
+
+def get_series_subtitle(
+
+    imdb_id:str,
+
+    season:str,
+
+    episode:str
+
+):
+
+
+    conn = sqlite3.connect(DB)
+
+    cursor = conn.cursor()
+
+
+
+    cursor.execute(
+
+        """
+
+        SELECT filename,path
+
+        FROM subtitles
+
+
+        WHERE imdb=?
+
+        AND season=?
+
+        AND episode=?
+
+
+        """,
+
+        (
+
+            imdb_id,
+
+            season,
+
+            episode
+
+        )
+
+    )
+
+
+
+    result = cursor.fetchone()
+
+
+    conn.close()
+
+
+
+    if not result:
+
+
+        return {
+
+            "subtitles":[]
+
+        }
+
+
+
+    filename, path = result
+
+
+
+    return {
+
+
+        "subtitles":[
+
+
+            {
+
+
+                "id":
+
+                f"{imdb_id}-{season}-{episode}",
+
+
+
+                "url":
+
+                f"/subtitle/file/{filename}",
+
+
+
+                "lang":
+
+                "ms",
+
+
+
+                "label":
+
+                "Malay"
+
+            }
+
+
+        ]
+
+    }
+
+
+
+
+
+# =========================
+# MOVIE SUPPORT
+# =========================
+
+@app.get(
+    "/subtitles/movie/{imdb_id}"
+)
+
+def get_movie_subtitle(
+
+    imdb_id:str
+
+):
+
+
+    conn = sqlite3.connect(DB)
+
+    cursor = conn.cursor()
+
+
+
+    cursor.execute(
+
+        """
+
+        SELECT filename
+
+        FROM subtitles
+
+
+        WHERE imdb=?
+
+
+        AND type='movie'
+
+
+        """,
+
+        (
+
+            imdb_id,
+
+        )
+
+    )
+
+
+
+    result = cursor.fetchone()
+
+
+    conn.close()
+
+
+
+    if not result:
+
+
+        return {
+
+            "subtitles":[]
+
+        }
+
+
+
+    filename = result[0]
+
+
+
+    return {
+
+
+        "subtitles":[
+
+
+            {
+
+
+                "id":
+
+                imdb_id,
+
+
+                "url":
+
+                f"/subtitle/file/{filename}",
+
+
+                "lang":
+
+                "ms",
+
+
+                "label":
+
+                "Malay"
+
+            }
+
+
+        ]
+
+    }
+
+
+
+
+
+# =========================
+# SERVE SRT FILE
+# =========================
+
+
+@app.get(
+
+    "/subtitle/file/{filename}"
+
+)
+
+def subtitle_file(
+
+    filename:str
+
+):
+
+
+    path = os.path.join(
+
+        UPLOAD_FOLDER,
+
+        filename
+
+    )
+
+
+
+    if os.path.exists(path):
+
+
+        return FileResponse(
+
+            path,
+
+            media_type="text/plain"
+
+        )
+
+
+
+    return {
+
+
+        "error":
+
+        "File not found"
+
+    }
