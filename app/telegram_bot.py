@@ -514,3 +514,16 @@ application.add_handler(
         text_message
     )
 )
+
+
+# ==========================
+# RUN BOT
+# ==========================
+
+async def run_bot():
+
+    await application.bot.delete_webhook(
+        drop_pending_updates=True
+    )
+
+    await application.run_polling()
