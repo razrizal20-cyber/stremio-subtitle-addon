@@ -5,3 +5,4 @@ httpx
 aiofiles
 aiosqlite
 python-multipart
+python-telegram-bot==22.8
