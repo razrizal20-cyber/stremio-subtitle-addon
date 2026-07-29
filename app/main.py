@@ -1,6 +1,10 @@
+import os
+import sqlite3
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from .telegram_bot import application
 
