@@ -74,6 +74,24 @@ init_database()
 # HOME TEST
 # =========================
 
+@app.get("/test/database")
+def test_database():
+
+    conn = sqlite3.connect(DB)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM subtitles"
+    )
+
+    data = cursor.fetchall()
+
+    conn.close()
+
+    return {
+        "data": data
+    }
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
